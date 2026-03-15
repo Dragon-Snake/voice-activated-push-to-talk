@@ -1,32 +1,44 @@
+import sys
 import sounddevice as sd
 import numpy as np
 import time
-import tkinter as tk
-from tkinter import ttk
 import threading
+
 from pynput.keyboard import Controller, KeyCode
-import customtkinter as ctk
+
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QComboBox, QSlider, QTabWidget, QTextEdit
+)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPainter, QColor, QPen
+
 
 keyboard = Controller()
 
 running = False
 key_held = False
 last_voice_time = 0
+max_volume_seen = 0.01
 current_volume = 0
+smoothed_volume = 0
 stream = None
-smoothed_volume = 0.0
-smoothing_factor = 0.2  # 0 = no smoothing, 1 = very slow
+smoothing_factor = 0.35
 
-# ----------------- Microphone detection -----------------
+last_ptt_key = "v"
+
+
+# ---------------- MIC DETECTION ----------------
 
 def is_working_mic(index):
     try:
         with sd.InputStream(device=index, channels=1, samplerate=44100) as s:
             data, _ = s.read(1024)
-            volume = np.sqrt(np.mean(data**2))
-            return volume > 0
+            volume = np.sqrt(np.mean(data ** 2))
+            return volume >= 0
     except Exception:
         return False
+
 
 def get_valid_mics():
     devices = sd.query_devices()
@@ -34,270 +46,456 @@ def get_valid_mics():
     valid = []
 
     for i, d in enumerate(devices):
-        name = d['name']
-        max_in = d["max_input_channels"]
+        name = d["name"]
 
-        if max_in > 0 and all(x not in name for x in ["Stereo Mix", "Primary Sound Capture", "Microsoft Sound Mapper", "Mic in at"]):
-            if name not in seen:
+        if d["max_input_channels"] > 0:
+            if name not in seen and all(x not in name for x in [
+                "Stereo Mix", "Primary Sound Capture", "Microsoft Sound Mapper"
+            ]):
                 seen.add(name)
+
                 if is_working_mic(i):
                     valid.append((i, name))
+
     return valid
 
-# ----------------- Audio callback -----------------
+
+# ---------------- AUDIO CALLBACK ----------------
 
 def audio_callback(indata, frames, time_info, status):
-    global current_volume
-    if status:
-        print(status)
-    # RMS normalized to 0–1 range
-    current_volume = min(np.sqrt(np.mean(indata**2)) * 10, 1.0)
+    global current_volume, max_volume_seen
 
-# ----------------- Mic processing loop -----------------
+    volume = np.sqrt(np.mean(indata ** 2))
 
-def update_gui_status():
-    # Determine the label text
-    if not running:
-        text = "Stopped"
-    elif key_held:
-        text = "PTT ACTIVE"
-    else:
-        text = "Listening"
+    # track loudest level we've seen
+    if volume > max_volume_seen:
+        max_volume_seen = volume
 
-    status_label.configure(text=text)
-    root.after(50, update_gui_status)  # run again every 50ms
+    # normalize against that level
+    normalized = volume / max_volume_seen
 
-def mic_loop():
+    current_volume = min(normalized, 1.0)
+
+
+# ---------------- MIC LOOP ----------------
+
+def mic_loop(window):
     global key_held, last_voice_time, smoothed_volume
 
-    MIN_HOLD = 0.1  # seconds
+    MIN_HOLD = 0.1
 
     while running:
+
         volume = current_volume
-        threshold_value = threshold.get() / 1000
-        release_delay = delay.get() / 1000
-        key_obj = KeyCode.from_char(key_entry.get() or last_ptt_key)
 
-        # Smooth volume
-        smoothed_volume = (smoothing_factor * volume) + ((1 - smoothing_factor) * smoothed_volume)
-        root.after(0, mic_meter.set, smoothed_volume)
+        threshold_value = window.threshold_slider.value() / 1000
+        release_delay = window.delay_slider.value() / 1000
 
-        # Check PTT
+        try:
+            key_obj = KeyCode.from_char(window.ptt_key)
+        except:
+            key_obj = KeyCode.from_char("v")
+
+        smoothed_volume = (
+            smoothing_factor * volume +
+            (1 - smoothing_factor) * smoothed_volume
+        )
+
         if smoothed_volume > threshold_value:
             last_voice_time = time.time()
+
             if not key_held:
                 keyboard.press(key_obj)
                 key_held = True
+
         else:
-            if key_held and (time.time() - last_voice_time > release_delay) and (time.time() - last_voice_time > MIN_HOLD):
+            if key_held and (
+                time.time() - last_voice_time > release_delay
+                and time.time() - last_voice_time > MIN_HOLD
+            ):
                 keyboard.release(key_obj)
                 key_held = False
 
         time.sleep(0.01)
 
-# ----------------- Start / Stop -----------------
 
-def start_script():
-    global running, stream
-    if running:
-        return
+# ---------------- MAIN WINDOW ----------------
 
-    if not mic_devices:
-        status_label.config(text="No working mic detected")
-        return
+class MicMeter(QWidget):
 
-    selected_name = mic_dropdown.get()
-    mic_tuple = next((t for t in mic_devices if t[1] == selected_name), None)
-    if mic_tuple is None:
-        status_label.config(text="No working mic selected")
-        return
+    def __init__(self):
+        super().__init__()
 
-    selected_index = mic_tuple[0]
+        self.level = 0
+        self.threshold = 0.2
+        self.active = False
 
-    # Make sure we have a valid PTT key
-    ptt_char = key_entry.get() or last_ptt_key
+        self.history = [0] * 120  # waveform history
 
-    try:
-        stream = sd.InputStream(
-            device=selected_index,
-            channels=1,
-            samplerate=44100,
-            callback=audio_callback
-        )
-        stream.start()
-    except Exception as e:
-        root.after(0, status_label.config, {"text": f"Failed to start mic: {e}"})
-        return
+        self.setMinimumHeight(32)
 
-    running = True  # set first
-    root.after(0, status_label.config, {"text": "Listening"})  # schedule GUI update safely
-    threading.Thread(target=mic_loop, daemon=True).start()
+    def setLevel(self, level):
+        level = max(0, min(level, 1))
+        self.level = level
 
-def stop_script():
-    global running, key_held, stream
-    running = False
-    if stream:
-        stream.stop()
-        stream.close()
-        stream = None
+        self.history.append(level)
+        
+        if len(self.history) > 120:
+            self.history.pop(0)
 
-    if key_held:
-        keyboard.release(KeyCode.from_char(key_entry.get()))
-        key_held = False
+        self.update()
 
-    update_gui_status()
+    def setThreshold(self, threshold):
+        self.threshold = threshold
+        self.update()
 
-# ----------------- GUI -----------------
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+    def setActive(self, active):
+        self.active = active
+        self.update()
 
-root = ctk.CTk()
-root.title("Mic → Push-To-Talk")
-root.geometry("450x500")
+    def paintEvent(self, event):
 
-def toggle_theme():
-    current = ctk.get_appearance_mode()
-    ctk.set_appearance_mode("Light" if current=="Dark" else "Dark")
+        painter = QPainter(self)
 
-# ----------------- Tabview -----------------
-tabview = ctk.CTkTabview(root, width=400)
-tabview.pack(pady=10, padx=10, fill="both", expand=True)
-tabview.add("Main")
-tabview.add("Dev")
-main_tab = tabview.tab("Main")
-dev_tab = tabview.tab("Dev")
+        w = self.width()
+        h = self.height()
 
-# ----------------- Microphone -----------------
-ctk.CTkLabel(main_tab, text="Microphone").pack(pady=(10,0))
-mic_devices = get_valid_mics()
-mic_names = [d[1] for d in mic_devices]
-mic_dropdown = ctk.CTkComboBox(main_tab, values=mic_names)
-mic_dropdown.pack(pady=(0,10))
-if mic_devices:
-    mic_dropdown.set(mic_names[0])
+        # background
+        painter.setBrush(QColor("#2b2d31"))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(0, 0, w, h, 10, 10)
 
-def refresh_devices():
-    global mic_devices
-    mic_devices = get_valid_mics()
-    mic_dropdown.configure(values=[d[1] for d in mic_devices])
-    if mic_devices:
-        mic_dropdown.set(mic_devices[0][1])
+        step = w / len(self.history)
 
-ctk.CTkButton(main_tab, text="Refresh Mics", command=refresh_devices).pack(pady=(0,10))
+        baseline = h
 
-# ----------------- PTT Key Handling -----------------
-default_ptt_key = "v"
-last_ptt_key = default_ptt_key
+        for i, v in enumerate(self.history):
 
-# Create PTT Key Entry (disabled typing, click to capture)
-ctk.CTkLabel(main_tab, text="PTT Key").pack()
-key_entry = ctk.CTkEntry(main_tab, width=50)
-key_entry.insert(0, default_ptt_key)
-key_entry.configure(state="readonly")  # prevent typing
-key_entry.pack(pady=(0,10))
+            x = i * step
+            amplitude = v * (h * 0.95)
 
-# Capture a single key press when user clicks the entry
-def capture_ptt_key(event):
-    _ = event  # ignore event
-    key_entry.configure(state="normal")  # temporarily allow input
-    
-    def on_key(event_inner):
-        global last_ptt_key
-        key = event_inner.char
+            # color zones
+            if v < 0.2:
+                color = QColor("#2ecc71")   # green (quiet)
+            elif v < 0.6:
+                color = QColor("#3498db")   # blue (normal speech)
+            else:
+                color = QColor("#e74c3c")   # red (loud)
+
+            painter.setPen(QPen(color, 3))
+
+            painter.drawLine(
+                int(x),
+                int(baseline),
+                int(x),
+                int(baseline - amplitude)
+            )
+
+        # horizontal threshold line
+        threshold_y = int(h * (1 - self.threshold))
+
+        pen = QPen(QColor("#ffffff"))
+        pen.setWidth(2)
+
+        painter.setPen(pen)
+
+        painter.drawLine(0, threshold_y, w, threshold_y)
+
+class MainWindow(QWidget):
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Mic → Push-To-Talk")
+        self.setMinimumSize(420, 420)
+
+        self.ptt_key = "v"
+
+        layout = QVBoxLayout()
+
+        tabs = QTabWidget()
+
+        self.main_tab = QWidget()
+        self.dev_tab = QWidget()
+
+        tabs.addTab(self.main_tab, "Main")
+        tabs.addTab(self.dev_tab, "Dev")
+
+        layout.addWidget(tabs)
+
+        self.setLayout(layout)
+
+        self.build_main_tab()
+        self.build_dev_tab()
+
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_status)
+        self.update_timer.start(50)
+
+        self.debug_timer = QTimer()
+        self.debug_timer.timeout.connect(self.update_debug)
+        self.debug_timer.start(100)
+
+    # -------- MAIN TAB --------
+
+    def build_main_tab(self):
+
+        layout = QVBoxLayout()
+
+        # mic dropdown
+        layout.addWidget(QLabel("Microphone"))
+
+        self.mic_dropdown = QComboBox()
+        layout.addWidget(self.mic_dropdown)
+
+        self.refresh_mics()
+
+        refresh_btn = QPushButton("Refresh Mics")
+        refresh_btn.clicked.connect(self.refresh_mics)
+        layout.addWidget(refresh_btn)
+
+        # PTT key
+        layout.addWidget(QLabel("PTT Key"))
+
+        self.ptt_label = QLabel(self.ptt_key)
+        layout.addWidget(self.ptt_label)
+
+        change_key_btn = QPushButton("Change Key")
+        change_key_btn.clicked.connect(self.capture_key)
+        layout.addWidget(change_key_btn)
+
+        # threshold slider
+        layout.addWidget(QLabel("Mic Threshold"))
+
+        self.threshold_slider = QSlider(Qt.Horizontal)
+        self.threshold_slider.setRange(1, 100)
+        self.threshold_slider.setValue(20)
+        layout.addWidget(self.threshold_slider)
+
+        # delay slider
+        layout.addWidget(QLabel("Release Delay (ms)"))
+
+        self.delay_slider = QSlider(Qt.Horizontal)
+        self.delay_slider.setRange(0, 1000)
+        self.delay_slider.setValue(300)
+        layout.addWidget(self.delay_slider)
+
+        # mic meter
+        layout.addWidget(QLabel("Mic Level"))
+        self.mic_meter = MicMeter()
+        layout.addWidget(self.mic_meter)
+        self.mic_meter.setFixedHeight(80)
+
+        layout.setSpacing(14)
+        layout.setContentsMargins(18,18,18,18)
+
+        # status
+        self.status_label = QLabel("Stopped")
+        self.status_label.setStyleSheet("""
+        font-size: 16px;
+        font-weight: 600;
+        color: #bbbbbb;
+        """)
+        layout.addWidget(self.status_label)
+
+        # start stop buttons
+        btn_layout = QHBoxLayout()
+
+        start_btn = QPushButton("Start")
+        start_btn.setStyleSheet("background-color:#27ae60;")
+        start_btn.clicked.connect(self.start_script)
+
+        stop_btn = QPushButton("Stop")
+        stop_btn.setStyleSheet("background-color:#e74c3c;")
+        stop_btn.clicked.connect(self.stop_script)
+
+        btn_layout.addWidget(start_btn)
+        btn_layout.addWidget(stop_btn)
+
+        layout.addLayout(btn_layout)
+
+        self.main_tab.setLayout(layout)
+
+    # -------- DEV TAB --------
+
+    def build_dev_tab(self):
+
+        layout = QVBoxLayout()
+
+        self.debug_text = QTextEdit()
+        self.debug_text.setReadOnly(True)
+
+        layout.addWidget(self.debug_text)
+
+        self.dev_tab.setLayout(layout)
+
+    # -------- FUNCTIONS --------
+
+    def refresh_mics(self):
+
+        self.mic_devices = get_valid_mics()
+
+        self.mic_dropdown.clear()
+
+        for i, name in self.mic_devices:
+            self.mic_dropdown.addItem(name)
+
+    def capture_key(self):
+        self.status_label.setText("Press a key...")
+
+        self.grabKeyboard()
+
+    def keyPressEvent(self, event):
+        key = event.text()
+
         if key:
-            key_entry.delete(0, "end")
-            key_entry.insert(0, key[0])
-            last_ptt_key = key[0]
-        key_entry.configure(state="readonly")
-        key_entry.unbind("<Key>", key_binding_id)
-    
-    global key_binding_id
-    key_binding_id = key_entry.bind("<Key>", on_key)
-    key_entry.delete(0, "end")
+            self.ptt_key = key.lower()
+            self.ptt_label.setText(self.ptt_key)
 
-# Bind click to capture
-key_entry.bind("<Button-1>", capture_ptt_key)
+        self.releaseKeyboard()
+        self.status_label.setText("Listening" if running else "Stopped")
 
-# ----------------- Slider helpers -----------------
-def slider_to_entry(slider, entry):
-    val = int(slider.get())
-    entry.delete(0, "end")
-    entry.insert(0, str(val))
+    def start_script(self):
 
-def entry_to_slider(entry, slider, min_val, max_val):
-    try:
-        val = int(entry.get())
-        if val < min_val: val = min_val
-        elif val > max_val: val = max_val
-        slider.set(val)
-        entry.delete(0, "end")
-        entry.insert(0, str(val))
-    except:
-        entry.delete(0, "end")
-        entry.insert(0, str(int(slider.get())))
+        global running, stream
 
-# ----------------- Threshold & Delay -----------------
-threshold_frame = ctk.CTkFrame(main_tab)
-threshold_frame.pack(pady=(5,10), fill="x", padx=20)
-ctk.CTkLabel(threshold_frame, text="Mic Threshold").grid(row=0, column=0, sticky="w")
-threshold = ctk.CTkSlider(threshold_frame, from_=1, to=100)
-threshold.set(20)
-threshold.grid(row=0, column=1, sticky="ew", padx=(10,5))
-threshold_value_entry = ctk.CTkEntry(threshold_frame, width=50)
-threshold_value_entry.grid(row=0, column=2)
-threshold_value_entry.insert(0, "20")
-threshold.configure(command=lambda v: slider_to_entry(threshold, threshold_value_entry))
-threshold_value_entry.bind("<Return>", lambda e: entry_to_slider(threshold_value_entry, threshold, 1, 100))
+        if running:
+            return
 
-delay_frame = ctk.CTkFrame(main_tab)
-delay_frame.pack(pady=(5,10), fill="x", padx=20)
-ctk.CTkLabel(delay_frame, text="Release Delay (ms)").grid(row=0, column=0, sticky="w")
-delay = ctk.CTkSlider(delay_frame, from_=0, to=1000)
-delay.set(300)
-delay.grid(row=0, column=1, sticky="ew", padx=(10,5))
-delay_entry = ctk.CTkEntry(delay_frame, width=50)
-delay_entry.grid(row=0, column=2)
-delay_entry.insert(0, "300")
-delay.configure(command=lambda v: slider_to_entry(delay, delay_entry))
-delay_entry.bind("<Return>", lambda e: entry_to_slider(delay_entry, delay, 0, 1000))
+        if not self.mic_devices:
+            self.status_label.setText("No working mic")
+            return
 
-# ----------------- Mic Level & Status -----------------
-ctk.CTkLabel(main_tab, text="Mic Level").pack(pady=(5,0))
-mic_meter = ctk.CTkProgressBar(main_tab, width=300)
-mic_meter.set(0)
-mic_meter.pack(pady=(0,10))
+        index = self.mic_devices[self.mic_dropdown.currentIndex()][0]
 
-status_label = ctk.CTkLabel(main_tab, text="Stopped")
-status_label.pack(pady=(0,10))
+        try:
+            stream = sd.InputStream(
+                device=index,
+                channels=1,
+                samplerate=44100,
+                callback=audio_callback
+            )
 
-button_frame = ctk.CTkFrame(main_tab)
-button_frame.pack(pady=(0,20))
-ctk.CTkButton(button_frame, text="Start", command=start_script).grid(row=0, column=0, padx=10)
-ctk.CTkButton(button_frame, text="Stop", command=stop_script).grid(row=0, column=1, padx=10)
+            stream.start()
 
-ctk.CTkButton(main_tab, text="Toggle Theme", command=toggle_theme).pack(pady=(0,10))
+        except Exception as e:
+            self.status_label.setText(f"Mic error: {e}")
+            return
 
-# ----------------- DEV TAB -----------------
-debug_info = ctk.CTkLabel(dev_tab, text="", justify="left")
-debug_info.pack(pady=10, padx=10)
+        running = True
 
-def update_debug_info():
-    # Always show debug info, even if not running
-    selected_index = mic_names.index(mic_dropdown.get()) if mic_dropdown.get() in mic_names else -1
-    info_text = (
-        f"Version: 1.0.0\n"
-        f"Current Volume: {current_volume:.3f}\n"
-        f"Smoothed Volume: {smoothed_volume:.3f}\n"
-        f"Mic Device Index: {selected_index}\n"
-        f"PTT Key Held: {key_held}\n"
-        f"Threshold: {threshold.get()}\n"
-        f"Release Delay: {delay.get()}\n"
-        f"Last PTT Key: {last_ptt_key}\n"
-        f"Status: {'Listening' if running else 'Stopped'}"
-    )
-    debug_info.configure(text=info_text)
-    root.after(100, update_debug_info)  # keep refreshing
+        threading.Thread(target=mic_loop, args=(self,), daemon=True).start()
 
-update_gui_status()
-update_debug_info()
-root.mainloop()
+    def stop_script(self):
+
+        global running, stream, key_held
+
+        running = False
+
+        if stream:
+            stream.stop()
+            stream.close()
+
+        if key_held:
+            keyboard.release(KeyCode.from_char(self.ptt_key))
+            key_held = False
+
+    def update_status(self):
+        
+        if not running:
+            text = "Stopped"
+        elif key_held:
+            text = "PTT ACTIVE"
+        else:
+            text = "Listening"
+
+        self.mic_meter.setLevel(smoothed_volume)
+        self.mic_meter.setThreshold(self.threshold_slider.value() / 100)
+        self.mic_meter.setActive(key_held)
+        self.status_label.setText(text)
+
+    def update_debug(self):
+
+        text = f"""
+Version: 1.5.0
+Current Volume: {current_volume:.3f}
+Smoothed Volume: {smoothed_volume:.3f}
+PTT Held: {key_held}
+Threshold: {self.threshold_slider.value()}
+Release Delay: {self.delay_slider.value()}
+Status: {"Listening" if running else "Stopped"}
+"""
+
+        self.debug_text.setText(text)
+
+
+# ---------------- APP ----------------
+
+app = QApplication(sys.argv)
+
+app.setStyleSheet("""
+QWidget {
+    background-color: #1e1f22;
+    color: #e6e6e6;
+    font-size: 14px;
+}
+
+QTabWidget::pane {
+    border: 1px solid #2b2d31;
+    border-radius: 8px;
+}
+
+QTabBar::tab {
+    background: #2b2d31;
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+QTabBar::tab:selected {
+    background: #3a3d42;
+}
+
+QLabel {
+    font-weight: 500;
+}
+
+QComboBox {
+    background: #2b2d31;
+    border: 1px solid #3a3d42;
+    padding: 6px;
+    border-radius: 6px;
+}
+
+QPushButton {
+    background-color: #3a86ff;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #559cff;
+}
+
+QPushButton:pressed {
+    background-color: #2f6fd1;
+}
+
+QSlider::groove:horizontal {
+    height: 6px;
+    background: #2b2d31;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #3a86ff;
+    width: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}
+""")
+
+window = MainWindow()
+window.show()
+
+sys.exit(app.exec())
