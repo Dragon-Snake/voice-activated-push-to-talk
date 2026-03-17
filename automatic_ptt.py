@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QSlider, QTabWidget, QTextEdit,
     QSystemTrayIcon, QSplitter, QInputDialog, QListWidget, QListWidgetItem,
-    QColorDialog, QSpinBox
+    QColorDialog, QSpinBox, QSizePolicy, QScrollArea
 )
 from PySide6.QtGui import (
     QIcon, QPixmap, QLinearGradient, QPainter, QColor,
@@ -1021,23 +1021,31 @@ class MainWindow(QWidget):
     # -------- MAIN TAB --------
 
     def build_main_tab(self):
+        # Create scroll area for main content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(18, 18, 18, 18)  # Slightly reduced from 20
-        main_layout.setSpacing(16)  # Reduced from 20 for more space
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(16)
 
         # LEFT COLUMN - Settings
         left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(8, 0, 16, 0)  # Left, top, right, bottom
-        left_layout.setSpacing(14)  # Good spacing between sections
+        left_layout.setContentsMargins(0, 0, 12, 0)
+        left_layout.setSpacing(12)
         
         # Activation Mode Section
         mode_label = QLabel("Activation")
-        mode_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0;")
+        mode_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #b0b0c0;")
         left_layout.addWidget(mode_label)
         
         self.mode_dropdown = QComboBox()
         self.mode_dropdown.addItems(["ppt", "tap", "voice_only", "always_on"])
         self.mode_dropdown.setMinimumWidth(220)
+        self.mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_dropdown.currentTextChanged.connect(self.on_mode_changed)
         left_layout.addWidget(self.mode_dropdown)
 
@@ -1047,11 +1055,12 @@ class MainWindow(QWidget):
 
         # Microphone Section
         mic_label = QLabel("Microphone")
-        mic_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0; margin-top: 8px;")
+        mic_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #b0b0c0; margin-top: 8px;")
         left_layout.addWidget(mic_label)
         
         self.mic_dropdown = QComboBox()
         self.mic_dropdown.setMinimumWidth(250)
+        self.mic_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         left_layout.addWidget(self.mic_dropdown)
         self.refresh_mics()
         self.mic_dropdown.currentIndexChanged.connect(lambda: save_settings(self))
@@ -1063,7 +1072,7 @@ class MainWindow(QWidget):
 
         # Keys Section
         keys_label = QLabel("Keys")
-        keys_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0; margin-top: 12px;")
+        keys_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #b0b0c0; margin-top: 12px;")
         left_layout.addWidget(keys_label)
         
         # Activation Key
@@ -1113,12 +1122,13 @@ class MainWindow(QWidget):
         self.mute_mode_dropdown = QComboBox()
         self.mute_mode_dropdown.addItems(["push", "toggle"])
         self.mute_mode_dropdown.setMinimumWidth(220)
+        self.mute_mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mute_mode_dropdown.currentTextChanged.connect(lambda: save_settings(self))
         left_layout.addWidget(self.mute_mode_dropdown)
 
         # System Mute Section
         sysmute_label = QLabel("System Mute (All Apps)")
-        sysmute_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0; margin-top: 12px;")
+        sysmute_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #b0b0c0; margin-top: 12px;")
         left_layout.addWidget(sysmute_label)
         
         sysmute_key_sublabel = QLabel("System Mute Key")
@@ -1147,6 +1157,7 @@ class MainWindow(QWidget):
         self.system_mute_mode_dropdown = QComboBox()
         self.system_mute_mode_dropdown.addItems(["push", "toggle"])
         self.system_mute_mode_dropdown.setMinimumWidth(220)
+        self.system_mute_mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.system_mute_mode_dropdown.currentTextChanged.connect(lambda: save_settings(self))
         left_layout.addWidget(self.system_mute_mode_dropdown)
         
@@ -1157,7 +1168,7 @@ class MainWindow(QWidget):
 
         # Sensitivity Section
         sens_label = QLabel("Sensitivity")
-        sens_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0; margin-top: 12px;")
+        sens_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #b0b0c0; margin-top: 12px;")
         left_layout.addWidget(sens_label)
         
         thresh_sublabel = QLabel("Threshold")
@@ -1169,12 +1180,14 @@ class MainWindow(QWidget):
         self.threshold_slider = QSlider(Qt.Horizontal)
         self.threshold_slider.setRange(1, 100)
         self.threshold_slider.setValue(20)
+        self.threshold_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         thresh_layout.addWidget(self.threshold_slider)
         
         self.threshold_spinbox = QSpinBox()
         self.threshold_spinbox.setRange(1, 100)
         self.threshold_spinbox.setValue(20)
-        self.threshold_spinbox.setMaximumWidth(60)
+        self.threshold_spinbox.setMaximumWidth(70)
+        self.threshold_spinbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         thresh_layout.addWidget(self.threshold_spinbox)
         
         # Connect slider and spinbox
@@ -1194,12 +1207,14 @@ class MainWindow(QWidget):
         self.delay_slider = QSlider(Qt.Horizontal)
         self.delay_slider.setRange(0, 1000)
         self.delay_slider.setValue(300)
+        self.delay_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         delay_layout.addWidget(self.delay_slider)
         
         self.delay_spinbox = QSpinBox()
         self.delay_spinbox.setRange(0, 1000)
         self.delay_spinbox.setValue(300)
-        self.delay_spinbox.setMaximumWidth(60)
+        self.delay_spinbox.setMaximumWidth(70)
+        self.delay_spinbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         delay_layout.addWidget(self.delay_spinbox)
         
         # Connect slider and spinbox
@@ -1220,12 +1235,14 @@ class MainWindow(QWidget):
         self.fps_slider = QSlider(Qt.Horizontal)
         self.fps_slider.setRange(20, 60)
         self.fps_slider.setValue(45)
+        self.fps_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         fps_layout.addWidget(self.fps_slider)
         
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(20, 60)
         self.fps_spinbox.setValue(45)
-        self.fps_spinbox.setMaximumWidth(60)
+        self.fps_spinbox.setMaximumWidth(70)
+        self.fps_spinbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         fps_layout.addWidget(self.fps_spinbox)
         
         # Connect slider and spinbox
@@ -1240,20 +1257,22 @@ class MainWindow(QWidget):
 
         # RIGHT COLUMN - Waveform and Controls
         right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(16, 0, 8, 0)  # Left, top, right, bottom
-        right_layout.setSpacing(16)  # Increased from 14
+        right_layout.setContentsMargins(12, 0, 0, 0)
+        right_layout.setSpacing(12)
         
         # Waveform section
         waveform_label = QLabel("Microphone Level")
-        waveform_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b0b0c0;")
+        waveform_label.setStyleSheet("font-weight: bold; color: #b0b0c0;")
         right_layout.addWidget(waveform_label)
         
         self.mic_meter = ModernMicMeter(self.current_theme)
+        self.mic_meter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         right_layout.addWidget(self.mic_meter)
         self.mic_meter.setFixedHeight(120)
 
         # Status section
         self.status_label = QLabel("Stopped")
+        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.status_label.setStyleSheet("""
             font-size: 15px;
             font-weight: 600;
@@ -1271,6 +1290,7 @@ class MainWindow(QWidget):
         btn_layout.setSpacing(10)
         
         start_btn = QPushButton("Start")
+        start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         start_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4a9eff;
@@ -1292,6 +1312,7 @@ class MainWindow(QWidget):
         start_btn.clicked.connect(self.start_script)
 
         stop_btn = QPushButton("Stop")
+        stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         stop_btn.setStyleSheet("""
             QPushButton {
                 background-color: #e85d75;
@@ -1319,11 +1340,19 @@ class MainWindow(QWidget):
         right_layout.addStretch()
 
         # Add both columns to main layout with proper stretch factors
-        # Left column gets 1.3 parts for settings, right gets 0.7 for waveform
-        main_layout.addLayout(left_layout, 13)  # 13 parts for left (more space for controls)
-        main_layout.addLayout(right_layout, 7)  # 7 parts for right (waveform)
+        # Left column gets 10 parts (55%), right gets 8 parts (45%) for better left column breathing room
+        main_layout.addLayout(left_layout, 10)
+        main_layout.addLayout(right_layout, 8)
 
-        self.main_tab.setLayout(main_layout)
+        # Add main layout to scroll widget
+        scroll_layout.addLayout(main_layout, 1)
+        scroll.setWidget(scroll_widget)
+        
+        # Set scroll area to main tab
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.main_tab.setLayout(QVBoxLayout())
+        self.main_tab.layout().addWidget(scroll)
+        self.main_tab.layout().setContentsMargins(0, 0, 0, 0)
 
     def on_mode_changed(self, mode):
         """Update mode description"""
@@ -1352,40 +1381,56 @@ class MainWindow(QWidget):
     # -------- PROFILES TAB --------
 
     def build_profiles_tab(self):
-        layout = QVBoxLayout()
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         layout.addWidget(QLabel("Saved Profiles"))
         
         self.profile_list = QListWidget()
+        self.profile_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.profile_list)
         
         btn_layout = QHBoxLayout()
         
         new_profile_btn = QPushButton("New Profile")
+        new_profile_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         new_profile_btn.clicked.connect(self.create_new_profile)
         btn_layout.addWidget(new_profile_btn)
         
         load_profile_btn = QPushButton("Load Profile")
+        load_profile_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         load_profile_btn.clicked.connect(self.load_selected_profile)
         btn_layout.addWidget(load_profile_btn)
         
         default_profile_btn = QPushButton("Set as Default")
+        default_profile_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         default_profile_btn.setStyleSheet("background-color: #4a9eff;")
         default_profile_btn.clicked.connect(self.set_default_profile)
         btn_layout.addWidget(default_profile_btn)
         
         save_profile_btn = QPushButton("Save Current as Profile")
+        save_profile_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         save_profile_btn.clicked.connect(self.save_current_as_profile)
         btn_layout.addWidget(save_profile_btn)
         
         delete_profile_btn = QPushButton("Delete Profile")
+        delete_profile_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         delete_profile_btn.setStyleSheet("background-color: #f85149;")
         delete_profile_btn.clicked.connect(self.delete_selected_profile)
         btn_layout.addWidget(delete_profile_btn)
         
         layout.addLayout(btn_layout)
+        layout.addStretch()
         
-        self.profiles_tab.setLayout(layout)
+        scroll.setWidget(scroll_widget)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.profiles_tab.setLayout(QVBoxLayout())
+        self.profiles_tab.layout().addWidget(scroll)
+        self.profiles_tab.layout().setContentsMargins(0, 0, 0, 0)
         self.refresh_profiles_list()
 
     def set_default_profile(self):
@@ -1529,7 +1574,11 @@ class MainWindow(QWidget):
 
     def build_targets_tab(self):
         """Build the targets/destinations tab for keypress routing"""
-        layout = QVBoxLayout()
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(12)
         layout.setContentsMargins(18, 18, 18, 18)
 
@@ -1538,6 +1587,7 @@ class MainWindow(QWidget):
         
         # Target list
         self.targets_list = QListWidget()
+        self.targets_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.targets_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         layout.addWidget(self.targets_list)
         
@@ -1546,10 +1596,12 @@ class MainWindow(QWidget):
         
         self.target_dropdown = QComboBox()
         self.target_dropdown.setMinimumWidth(250)
+        self.target_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.refresh_available_targets()
         add_layout.addWidget(self.target_dropdown)
         
         add_target_btn = QPushButton("Add Target")
+        add_target_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         add_target_btn.clicked.connect(self.add_target)
         add_layout.addWidget(add_target_btn)
         
@@ -1557,18 +1609,24 @@ class MainWindow(QWidget):
         
         # Remove button
         remove_btn = QPushButton("Remove Selected")
+        remove_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         remove_btn.setStyleSheet("background-color: #f85149;")
         remove_btn.clicked.connect(self.remove_selected_target)
         layout.addWidget(remove_btn)
         
         # Refresh button
         refresh_targets_btn = QPushButton("Refresh Available Targets")
+        refresh_targets_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         refresh_targets_btn.clicked.connect(self.refresh_available_targets)
         layout.addWidget(refresh_targets_btn)
         
         layout.addStretch()
         
-        self.targets_tab.setLayout(layout)
+        scroll.setWidget(scroll_widget)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.targets_tab.setLayout(QVBoxLayout())
+        self.targets_tab.layout().addWidget(scroll)
+        self.targets_tab.layout().setContentsMargins(0, 0, 0, 0)
         self.refresh_targets_list()
 
     def refresh_available_targets(self):
@@ -1628,7 +1686,12 @@ class MainWindow(QWidget):
 
     def build_theme_tab(self):
         """Build the theme customization tab"""
-        layout = QVBoxLayout()
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         layout.addWidget(QLabel("Theme Colors", ))
         
@@ -1651,6 +1714,7 @@ class MainWindow(QWidget):
             btn_layout.addStretch()
             
             color_btn = QPushButton("Pick Color")
+            color_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             color_btn.clicked.connect(lambda checked, k=key: self.pick_color(k))
             btn_layout.addWidget(color_btn)
             
@@ -1664,10 +1728,15 @@ class MainWindow(QWidget):
         layout.addStretch()
         
         reset_btn = QPushButton("Reset to Default Theme")
+        reset_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         reset_btn.clicked.connect(self.reset_theme)
         layout.addWidget(reset_btn)
         
-        self.theme_tab.setLayout(layout)
+        scroll.setWidget(scroll_widget)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.theme_tab.setLayout(QVBoxLayout())
+        self.theme_tab.layout().addWidget(scroll)
+        self.theme_tab.layout().setContentsMargins(0, 0, 0, 0)
 
     def pick_color(self, color_key):
         """Open color picker dialog"""
@@ -1699,38 +1768,55 @@ class MainWindow(QWidget):
     # -------- DEV TAB --------
 
     def build_dev_tab(self):
-        layout = QVBoxLayout()
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
         splitter = QSplitter(Qt.Vertical)
 
         self.debug_info = QTextEdit()
         self.debug_info.setReadOnly(True)
+        self.debug_info.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
+        self.log_console.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         self.config_view = QTextEdit()
         self.config_view.setReadOnly(False)
+        self.config_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         splitter.addWidget(self.debug_info)
         splitter.addWidget(self.log_console)
         splitter.addWidget(self.config_view)
+        splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         layout.addWidget(QLabel("Dev Console"))
         layout.addWidget(splitter)
         
         refresh_btn = QPushButton("Refresh Config")
+        refresh_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         refresh_btn.clicked.connect(self.update_config_view)
         layout.addWidget(refresh_btn)
         
         save_btn = QPushButton("Save Config")
+        save_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         save_btn.clicked.connect(self.save_config_from_editor)
         layout.addWidget(save_btn)
         
         clear_btn = QPushButton("Clear Logs")
+        clear_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         clear_btn.clicked.connect(lambda: self.clear_logs())
         layout.addWidget(clear_btn)
 
-        self.dev_tab.setLayout(layout)
+        scroll.setWidget(scroll_widget)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.dev_tab.setLayout(QVBoxLayout())
+        self.dev_tab.layout().addWidget(scroll)
+        self.dev_tab.layout().setContentsMargins(0, 0, 0, 0)
 
     def clear_logs(self):
         with log_lock:
@@ -2010,6 +2096,13 @@ App Muted: {mute_held or mute_toggled}
 
 app = QApplication(sys.argv)
 
+# Enable High DPI scaling for better rendering on high-resolution displays
+app.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
+# Set global font instead of stylesheet
+app.setFont(QFont("Segoe UI", 10))
+
 tray_icon = QSystemTrayIcon(create_studio_mic_icon())
 tray_icon.setToolTip("Mic → Push-To-Talk (Multi-Mode)")
 tray_icon.show()
@@ -2109,8 +2202,9 @@ QPushButton {
     color: #ffffff;
     border: none;
     border-radius: 6px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     font-weight: 600;
+    min-height: 28px;
 }
 
 QPushButton:hover {
@@ -2128,13 +2222,20 @@ QSlider::groove:horizontal {
     border-radius: 3px;
 }
 
+QSlider::handle:horizontal {
+    background: #58a6ff;
+    width: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+
 QSpinBox {
     background: #0d1117;
     border: 1px solid #30363d;
-    padding: 6px 8px;
-    border-radius: 6px;
+    padding: 4px 6px;
+    border-radius: 4px;
     color: #c9d1d9;
-    min-width: 60px;
+    min-width: 50px;
 }
 
 QSpinBox:focus {
