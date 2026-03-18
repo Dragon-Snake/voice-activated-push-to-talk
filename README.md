@@ -1,8 +1,29 @@
 # Automatic-PTT
 Automatically presses the PTT (Push-To-Talk) key via mic activity.
 
+# Features:
+- Custom PTT key (hold, tap, voice, or always on)
+- Custom mute key (push, toggle)
+- System-wide mute (separate key, push, toggle)
+- Adjustable sound threshold (anything under it won't get picked up)
+- Release delay (how long the PTT key is held after you finish talking)
+- Waveform display (with fps slider ranging from 20-60fps for the animation)
+- Profiles, multiple profiles, each one is nameable, the default profile can be changed (the one that is auto-loaded on startup), all settings are per-profile
+- Targets (focused window, or a specific service/EXE), supports multiple targets
+- Customizable theme (all colors from waveform, to background, to ui colors are customizable, per-profile)
+- Dev tab that shows a built-in log, information, and the json settings (with options to reset settings to default per-profile)
+- More to come in the future
+
 # Why did I make this?
 Because the only other program I could find that does this is "autoptt", which sucks. So I decided to give people something they deserve.
+
+# Why use this and not autoptt?
+Because:
+- Mine is 101% free
+- Mine is open-sourced (meaning that you, yes you, can see the very code that is running on your machine)
+- Mine does not close every 15 minutes to beg for money
+- Did I also mention it's entirely free? Forever? Yes? Because it'll stay that way.
+- Will personally curate features or support for games that it doesn't work for (ensuring it works for any and all situations where you would want to use it)
 
 I give my word that my software:
 - Will never periodically close every so often to beg for money.
