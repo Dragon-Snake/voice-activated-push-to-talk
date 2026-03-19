@@ -172,7 +172,7 @@ def main():
     window = MainWindow(parent_app=None)
     
     # Step 5: Create the Application controller with the window
-    # This is the ONLY place we create Application
+    # This is the ONLY place we create Application (previously, there was 2 places creating it, the second overwrites the first)
     controller = Application(qt_app, window)
     
     # Step 6: Now assign the controller to the window
